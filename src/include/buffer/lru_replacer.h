@@ -50,7 +50,7 @@ class LRUReplacer : public Replacer {
   // TODO(student): implement me!
   std::list<frame_id_t> lru_replacer_;
   std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> lru_hash_;
-  std::mutex mutex_;
+  std::mutex lru_replacer_latch_;
   size_t max_size_;
 };
 

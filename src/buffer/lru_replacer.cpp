@@ -19,7 +19,7 @@ LRUReplacer::LRUReplacer(size_t num_pages) : max_size_(num_pages) {}
 LRUReplacer::~LRUReplacer() = default;
 
 bool LRUReplacer::Victim(frame_id_t *frame_id) {
-  std::scoped_lock latch(mutex_);
+  std::scoped_lock scoped_lru_replacer_latch(lru_replacer_latch_);
   if (lru_replacer_.empty()) {
     frame_id = nullptr;
     return false;
@@ -31,7 +31,7 @@ bool LRUReplacer::Victim(frame_id_t *frame_id) {
 }
 
 void LRUReplacer::Pin(frame_id_t frame_id) {
-  std::scoped_lock latch(mutex_);
+  std::scoped_lock scoped_lru_replacer_latch(lru_replacer_latch_);
   auto iter = lru_hash_.find(frame_id);
   if (iter == lru_hash_.end()) {
     return;
@@ -42,7 +42,7 @@ void LRUReplacer::Pin(frame_id_t frame_id) {
 }
 
 void LRUReplacer::Unpin(frame_id_t frame_id) {
-  std::scoped_lock latch(mutex_);
+  std::scoped_lock scoped_lru_replacer_latch(lru_replacer_latch_);
   if (lru_hash_.find(frame_id) != lru_hash_.end()) {
     return;
   }
@@ -54,7 +54,7 @@ void LRUReplacer::Unpin(frame_id_t frame_id) {
 }
 
 size_t LRUReplacer::Size() {
-  std::scoped_lock latch(mutex_);
+  std::scoped_lock scoped_lru_replacer_latch(lru_replacer_latch_);
   return lru_replacer_.size();
 }
 
