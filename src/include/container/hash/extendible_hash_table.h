@@ -134,7 +134,15 @@ class ExtendibleHashTable {
    * @param bucket_page_id the page_id to fetch
    * @return a pointer to a bucket page
    */
-  HASH_TABLE_BUCKET_TYPE *FetchBucketPage(page_id_t bucket_page_id);
+  Page *FetchBucketPage(page_id_t bucket_page_id);
+
+  /**
+   * Get bucket data from the bucket page
+   *
+   * @param page a pointer to the page fetched from the buffer pool manager
+   * @return a pointer to the bucket page data
+   */
+  HASH_TABLE_BUCKET_TYPE *GetBucketPageData(Page *page);
 
   /**
    * Performs insertion with an optional bucket splitting.
