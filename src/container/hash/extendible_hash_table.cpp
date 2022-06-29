@@ -282,9 +282,9 @@ void HASH_TABLE_TYPE::Merge(Transaction *transaction, const KeyType &key, const 
   auto bucket_page_data = GetBucketPageData(bucket_page);
 
   if (!bucket_page_data->IsEmpty() || bucket_local_depth <= 1 || bucket_local_depth != split_image_local_depth) {
+    bucket_page->RUnlatch();
     buffer_pool_manager_->UnpinPage(bucket_page_id, false);
     buffer_pool_manager_->UnpinPage(directory_page_id_, false);
-    bucket_page->RUnlatch();
     table_latch_.WUnlock();
     return;
   }
