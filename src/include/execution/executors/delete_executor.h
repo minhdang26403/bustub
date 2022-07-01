@@ -58,10 +58,10 @@ class DeleteExecutor : public AbstractExecutor {
  private:
   /** The delete plan node to be executed */
   const DeletePlanNode *plan_;
-  /** Metadata identifying the table that should be updated */
+  /** Metadata identifying the table that should be deleted */
   const TableInfo *table_info_{nullptr};
   /* The list of index info */
-  std::vector<IndexInfo*> index_info_list_;
+  std::vector<IndexInfo *> index_info_list_;
   /** The child executor from which RIDs for deleted tuples are pulled */
   std::unique_ptr<AbstractExecutor> child_executor_;
 };

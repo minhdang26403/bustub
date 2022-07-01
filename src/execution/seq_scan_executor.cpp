@@ -14,7 +14,7 @@
 
 namespace bustub {
 
-SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan) 
+SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan)
     : AbstractExecutor(exec_ctx), plan_(plan), table_info_(nullptr), table_iter_(nullptr, RID(), nullptr) {}
 
 void SeqScanExecutor::Init() {
@@ -27,7 +27,7 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
   TableIterator end = table_info_->table_->End();
   auto predicate = plan_->GetPredicate();
   if (predicate != nullptr) {
-    while (table_iter_ != end && predicate->Evaluate(&(*table_iter_), &table_info_->schema_).GetAs<bool>() == false) {
+    while (table_iter_ != end && !predicate->Evaluate(&(*table_iter_), &table_info_->schema_).GetAs<bool>()) {
       ++table_iter_;
     }
   }
@@ -35,7 +35,18 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
     return false;
   }
   *tuple = *table_iter_;
-  *rid = table_iter_->GetRid();
+  // Use old RID because we haven't intialized page_id and slot_num for the new tuple
+  *rid = tuple->GetRid();
+
+  // Construct a new tuple (with column order possibly different)
+  std::vector<Value> values;
+  const Schema *schema = plan_->OutputSchema();
+  uint32_t column_count = schema->GetColumnCount();
+  for (uint32_t idx = 0; idx < column_count; ++idx) {
+    values.push_back(schema->GetColumn(idx).GetExpr()->Evaluate(tuple, &table_info_->schema_));
+  }
+  *tuple = Tuple(values, schema);
+
   ++table_iter_;
   return true;
 }

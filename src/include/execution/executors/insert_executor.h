@@ -14,6 +14,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
@@ -59,12 +60,12 @@ class InsertExecutor : public AbstractExecutor {
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
-  /** Metadata identifying the table that should be updated */
-  const TableInfo* table_info_{nullptr};
+  /** Metadata identifying the table that should be inserted */
+  const TableInfo *table_info_{nullptr};
   /** The list of index info */
-  std::vector<IndexInfo*> index_info_list_;
+  std::vector<IndexInfo *> index_info_list_;
   /** The current index of the raw value */
-  uint32_t idx{0};
+  uint32_t idx_{0};
   /** The child executor to obtain value from */
   std::unique_ptr<AbstractExecutor> child_executor_;
 };

@@ -71,7 +71,7 @@ class UpdateExecutor : public AbstractExecutor {
   /** Metadata identifying the table that should be updated */
   const TableInfo *table_info_{nullptr};
   /** The list of index info */
-  std::vector<IndexInfo*> index_info_list_;
+  std::vector<IndexInfo *> index_info_list_;
   /** The child executor to obtain value from */
   std::unique_ptr<AbstractExecutor> child_executor_;
 };

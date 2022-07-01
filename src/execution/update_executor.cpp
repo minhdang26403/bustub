@@ -26,23 +26,23 @@ void UpdateExecutor::Init() {
 }
 
 bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
-  bool pull_succeed = child_executor_->Next(tuple, rid);
-  if (!pull_succeed) {
+  if (!child_executor_->Next(tuple, rid)) {
     return false;
   }
 
   Tuple new_tuple = GenerateUpdatedTuple(*tuple);
   bool update_succeed = table_info_->table_->UpdateTuple(new_tuple, *rid, exec_ctx_->GetTransaction());
-
   if (update_succeed) {
     for (auto index_info : index_info_list_) {
-      index_info->index_->DeleteEntry(tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()), 
-          *rid, exec_ctx_->GetTransaction());
-      index_info->index_->InsertEntry(new_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()), 
+      index_info->index_->DeleteEntry(
+          tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()), *rid,
+          exec_ctx_->GetTransaction());
+      index_info->index_->InsertEntry(
+          new_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()),
           *rid, exec_ctx_->GetTransaction());
     }
   }
-  return update_succeed; 
+  return update_succeed;
 }
 
 Tuple UpdateExecutor::GenerateUpdatedTuple(const Tuple &src_tuple) {
