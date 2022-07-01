@@ -60,12 +60,14 @@ class ExecutionEngine {
       Tuple tuple;
       RID rid;
       while (executor->Next(&tuple, &rid)) {
-        if (result_set != nullptr) {
+        PlanType type = plan->GetType();
+        if (result_set != nullptr && type != PlanType::Insert && type != PlanType::Update && type != PlanType::Delete) {
           result_set->push_back(tuple);
         }
       }
     } catch (Exception &e) {
-      // TODO(student): handle exceptions
+      throw Exception(ExceptionType::UNKNOWN_TYPE, "InsertExecutor:child execute error.");
+      return false;
     }
 
     return true;
