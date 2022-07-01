@@ -98,9 +98,15 @@ TEST_F(ExecutorTest, SimpleSeqScanTest) {
   auto *out_schema = MakeOutputSchema({{"colA", col_a}, {"colB", col_b}});
   SeqScanPlanNode plan{out_schema, predicate, table_info->oid_};
 
+  auto *col_c = MakeColumnValueExpression(schema, 0, "colC");
+  auto *col_d = MakeColumnValueExpression(schema, 0, "colD");
+  auto *out_schema2 = MakeOutputSchema({{"colC", col_c}, {"colD", col_d}});
+  SeqScanPlanNode plan2{out_schema2, predicate, table_info->oid_};
+
   // Execute
   std::vector<Tuple> result_set{};
   GetExecutionEngine()->Execute(&plan, &result_set, GetTxn(), GetExecutorContext());
+  GetExecutionEngine()->Execute(&plan2, nullptr, GetTxn(), GetExecutorContext());
 
   // Verify
   ASSERT_EQ(result_set.size(), 500);
@@ -353,7 +359,8 @@ TEST_F(ExecutorTest, SimpleDeleteTest) {
   }
 
   // DELETE FROM test_1 WHERE col_a == 50
-  const Tuple index_key = Tuple(result_set[0]).KeyFromTuple(schema, index_info->key_schema_, index_info->index_->GetKeyAttrs());
+  const Tuple index_key =
+      Tuple(result_set[0]).KeyFromTuple(schema, index_info->key_schema_, index_info->index_->GetKeyAttrs());
   std::unique_ptr<AbstractPlanNode> delete_plan;
   { delete_plan = std::make_unique<DeletePlanNode>(scan_plan1.get(), table_info->oid_); }
   GetExecutionEngine()->Execute(delete_plan.get(), nullptr, GetTxn(), GetExecutorContext());
@@ -415,7 +422,7 @@ TEST_F(ExecutorTest, SimpleNestedLoopJoinTest) {
 }
 
 // SELECT test_4.colA, test_4.colB, test_6.colA, test_6.colB FROM test_4 JOIN test_6 ON test_4.colA = test_6.colA;
-TEST_F(ExecutorTest, DISABLED_SimpleHashJoinTest) {
+TEST_F(ExecutorTest, SimpleHashJoinTest) {
   // Construct sequential scan of table test_4
   const Schema *out_schema1{};
   std::unique_ptr<AbstractPlanNode> scan_plan1{};
@@ -484,7 +491,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleHashJoinTest) {
 }
 
 // SELECT COUNT(col_a), SUM(col_a), min(col_a), max(col_a) from test_1;
-TEST_F(ExecutorTest, DISABLED_SimpleAggregationTest) {
+TEST_F(ExecutorTest, SimpleAggregationTest) {
   const Schema *scan_schema;
   std::unique_ptr<AbstractPlanNode> scan_plan;
   {
@@ -513,7 +520,6 @@ TEST_F(ExecutorTest, DISABLED_SimpleAggregationTest) {
   }
   std::vector<Tuple> result_set{};
   GetExecutionEngine()->Execute(agg_plan.get(), &result_set, GetTxn(), GetExecutorContext());
-
   auto count_a_val = result_set[0].GetValue(agg_schema, agg_schema->GetColIdx("count_a")).GetAs<int32_t>();
   auto sum_a_val = result_set[0].GetValue(agg_schema, agg_schema->GetColIdx("sum_a")).GetAs<int32_t>();
   auto min_a_val = result_set[0].GetValue(agg_schema, agg_schema->GetColIdx("min_a")).GetAs<int32_t>();
@@ -534,7 +540,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleAggregationTest) {
 }
 
 // SELECT count(col_a), col_b, sum(col_c) FROM test_1 Group By col_b HAVING count(col_a) > 100
-TEST_F(ExecutorTest, DISABLED_SimpleGroupByAggregation) {
+TEST_F(ExecutorTest, SimpleGroupByAggregation) {
   const Schema *scan_schema;
   std::unique_ptr<AbstractPlanNode> scan_plan;
   {
@@ -587,7 +593,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleGroupByAggregation) {
 }
 
 // SELECT colA, colB FROM test_3 LIMIT 10
-TEST_F(ExecutorTest, DISABLED_SimpleLimitTest) {
+TEST_F(ExecutorTest, SimpleLimitTest) {
   auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_3");
   auto &schema = table_info->schema_;
 
@@ -615,7 +621,7 @@ TEST_F(ExecutorTest, DISABLED_SimpleLimitTest) {
 }
 
 // SELECT DISTINCT colC FROM test_7
-TEST_F(ExecutorTest, DISABLED_SimpleDistinctTest) {
+TEST_F(ExecutorTest, SimpleDistinctTest) {
   auto *table_info = GetExecutorContext()->GetCatalog()->GetTable("test_7");
   auto &schema = table_info->schema_;
 
@@ -648,6 +654,54 @@ TEST_F(ExecutorTest, DISABLED_SimpleDistinctTest) {
   std::iota(expected.begin(), expected.end(), 0);
 
   ASSERT_TRUE(std::equal(results.cbegin(), results.cend(), expected.cbegin()));
+}
+
+// Own test
+// DELETE FROM test_1 WHERE colA < 500
+TEST_F(ExecutorTest, DeleteWithIndexTestOne) {
+  // Construct query plan
+  auto table_info = GetExecutorContext()->GetCatalog()->GetTable("test_1");
+  auto &schema = table_info->schema_;
+  auto col_a = MakeColumnValueExpression(schema, 0, "colA");
+  auto const50 = MakeConstantValueExpression(ValueFactory::GetIntegerValue(500));
+  auto predicate = MakeComparisonExpression(col_a, const50, ComparisonType::LessThan);
+  auto out_schema1 = MakeOutputSchema({{"colA", col_a}});
+  auto scan_plan1 = std::make_unique<SeqScanPlanNode>(out_schema1, predicate, table_info->oid_);
+
+  // Create the index
+  auto key_schema = ParseCreateStatement("colA int");
+  ComparatorType comparator{key_schema.get()};
+  auto *index_info = GetExecutorContext()->GetCatalog()->CreateIndex<KeyType, ValueType, ComparatorType>(
+      GetTxn(), "index1", "test_1", GetExecutorContext()->GetCatalog()->GetTable("test_1")->schema_, *key_schema, {0},
+      8, HashFunctionType{});
+
+  std::vector<Tuple> origin_result_set;
+  GetExecutionEngine()->Execute(scan_plan1.get(), &origin_result_set, GetTxn(), GetExecutorContext());
+
+  // Verify
+  ASSERT_EQ(origin_result_set.size(), 500);
+  for (const auto &tuple : origin_result_set) {
+    ASSERT_TRUE(tuple.GetValue(out_schema1, out_schema1->GetColIdx("colA")).GetAs<int32_t>() < 500);
+  }
+
+  // DELETE FROM test_1 WHERE colA < 500
+  std::unique_ptr<AbstractPlanNode> delete_plan;
+  { delete_plan = std::make_unique<DeletePlanNode>(scan_plan1.get(), table_info->oid_); }
+  GetExecutionEngine()->Execute(delete_plan.get(), nullptr, GetTxn(), GetExecutorContext());
+
+  // SELECT colA FROM test_1 WHERE colA < 500
+  std::vector<Tuple> result_set;
+  GetExecutionEngine()->Execute(scan_plan1.get(), &result_set, GetTxn(), GetExecutorContext());
+  ASSERT_TRUE(result_set.empty());
+
+  // Ensure the key was removed from the index
+  std::vector<RID> rids{};
+  for (auto &tuple : origin_result_set) {
+    auto index_key =
+        tuple.KeyFromTuple(table_info->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
+    index_info->index_->ScanKey(index_key, &rids, GetTxn());
+    ASSERT_TRUE(rids.empty());
+  }
 }
 
 }  // namespace bustub
