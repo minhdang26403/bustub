@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>  // NOLINT
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -46,11 +47,20 @@ class LockManager {
 
   class LockRequestQueue {
    public:
+    // Queue of unprocessed exclusive lock requests
     std::list<LockRequest> request_queue_;
+    // Queue of transactions holding shared locks
+    std::unordered_set<txn_id_t> shared_lock_holders_;
     // for notifying blocked transactions on this rid
     std::condition_variable cv_;
     // txn_id of an upgrading transaction (if any)
     txn_id_t upgrading_ = INVALID_TXN_ID;
+    // txn_id of the transaction holding exclusive lock
+    txn_id_t exclusive_lock_holder_ = INVALID_TXN_ID;
+
+    bool IsLockGranted(txn_id_t txn_id) const {
+      return shared_lock_holders_.find(txn_id) != shared_lock_holders_.end() || exclusive_lock_holder_ == txn_id;
+    }
   };
 
  public:
@@ -104,7 +114,36 @@ class LockManager {
    */
   bool Unlock(Transaction *txn, const RID &rid);
 
+  /**
+   * Preempts (aborts) younger requests incompatible with the current lock requester
+   * @param request_queue The general request queue
+   * @param txn_id the id of the transaction that requests the lock
+   * @param lock_mode the type of lock it requests
+   */
+  void PreemptsYoungerRequests(LockRequestQueue *request_queue, txn_id_t txn_id, LockMode lock_mode);
+
+  /**
+   * Preempts (aborts) younger shared lock holders incompatible with the current lock requester
+   * @param request_queue The general request queue
+   * @param txn_id the id of the transaction that requests the lock
+   */
+  void PreemptsYoungerSharedLockHolders(LockRequestQueue *request_queue, txn_id_t txn_id);
+
+  /**
+   * Preempts (aborts) younger exclusive lock holders incompatible with the current lock requester
+   * @param request_queue The general request queue
+   * @param txn_id the id of the transaction that requests the lock
+   */
+  void PreemptsYoungerExclusiveLockHolders(LockRequestQueue *request_queue, txn_id_t txn_id);
+
+  /**
+   * Handle exclusive lock requests in the queue
+   * @param request_queue The general request queue
+   */
+  void ProcessQueue(LockRequestQueue *request_queue);
+
  private:
+  /** The latch protects the shared lock table */
   std::mutex latch_;
 
   /** Lock table for lock requests. */
