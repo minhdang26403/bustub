@@ -34,9 +34,19 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
   if (table_iter_ == end) {
     return false;
   }
+
+  RID tuple_rid = table_iter_->GetRid();
+  auto txn = exec_ctx_->GetTransaction();
+  auto lock_manager = exec_ctx_->GetLockManager();
+  auto isolation_level = txn->GetIsolationLevel();
+  if (lock_manager != nullptr && isolation_level != IsolationLevel::READ_UNCOMMITTED) {
+    if (!lock_manager->LockShared(txn, tuple_rid)) {
+      return false;
+    }
+  }
   *tuple = *table_iter_;
   // Use old RID because we haven't intialized page_id and slot_num for the new tuple
-  *rid = tuple->GetRid();
+  *rid = tuple_rid;
 
   // Construct a new tuple (with column order possibly different)
   std::vector<Value> values;
@@ -46,6 +56,12 @@ bool SeqScanExecutor::Next(Tuple *tuple, RID *rid) {
     values.push_back(schema->GetColumn(idx).GetExpr()->Evaluate(tuple, &table_info_->schema_));
   }
   *tuple = Tuple(values, schema);
+
+  if (lock_manager != nullptr && isolation_level == IsolationLevel::READ_COMMITTED) {
+    if (!lock_manager->Unlock(txn, tuple_rid)) {
+      return false;
+    }
+  }
 
   ++table_iter_;
   return true;

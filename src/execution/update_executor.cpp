@@ -31,18 +31,33 @@ bool UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
   }
 
   Tuple new_tuple = GenerateUpdatedTuple(*tuple);
-  bool update_succeed = table_info_->table_->UpdateTuple(new_tuple, *rid, exec_ctx_->GetTransaction());
-  if (update_succeed) {
-    for (auto index_info : index_info_list_) {
-      index_info->index_->DeleteEntry(
-          tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()), *rid,
-          exec_ctx_->GetTransaction());
-      index_info->index_->InsertEntry(
-          new_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()),
-          *rid, exec_ctx_->GetTransaction());
+
+  // Acquire write lock
+  auto txn = exec_ctx_->GetTransaction();
+  auto lock_manager = exec_ctx_->GetLockManager();
+  RID new_tuple_rid = *rid;
+  if (lock_manager != nullptr) {
+    if (!lock_manager->LockExclusive(txn, new_tuple_rid)) {
+      return false;
     }
   }
-  return update_succeed;
+
+  if (!table_info_->table_->UpdateTuple(new_tuple, *rid, exec_ctx_->GetTransaction())) {
+    return false;
+  }
+
+  for (auto index_info : index_info_list_) {
+    index_info->index_->DeleteEntry(
+        tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()),
+        new_tuple_rid, exec_ctx_->GetTransaction());
+    index_info->index_->InsertEntry(
+        new_tuple.KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()),
+        new_tuple_rid, exec_ctx_->GetTransaction());
+    IndexWriteRecord index_write_record{new_tuple_rid, table_info_->oid_,      WType::UPDATE,          new_tuple,
+                                        *tuple,        index_info->index_oid_, exec_ctx_->GetCatalog()};
+    txn->GetIndexWriteSet()->emplace_back(index_write_record);
+  }
+  return true;
 }
 
 Tuple UpdateExecutor::GenerateUpdatedTuple(const Tuple &src_tuple) {

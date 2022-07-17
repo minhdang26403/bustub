@@ -41,16 +41,27 @@ bool InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) {
     }
   }
 
-  bool insert_succeed = table_info_->table_->InsertTuple(*tuple, rid, exec_ctx_->GetTransaction());
-  if (insert_succeed) {
-    for (auto index_info : index_info_list_) {
-      index_info->index_->InsertEntry(
-          tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()), *rid,
-          exec_ctx_->GetTransaction());
+  if (!table_info_->table_->InsertTuple(*tuple, rid, exec_ctx_->GetTransaction())) {
+    return false;
+  }
+  RID insert_tuple_rid = *rid;
+  auto txn = exec_ctx_->GetTransaction();
+  auto lock_manager = exec_ctx_->GetLockManager();
+  if (lock_manager != nullptr) {
+    if (!lock_manager->LockExclusive(txn, insert_tuple_rid)) {
+      return false;
     }
   }
 
-  return insert_succeed;
+  for (auto index_info : index_info_list_) {
+    index_info->index_->InsertEntry(
+        tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs()),
+        insert_tuple_rid, exec_ctx_->GetTransaction());
+    IndexWriteRecord index_write_record{insert_tuple_rid, table_info_->oid_,      WType::INSERT,          *tuple,
+                                        *tuple,           index_info->index_oid_, exec_ctx_->GetCatalog()};
+    txn->GetIndexWriteSet()->emplace_back(index_write_record);
+  }
+  return true;
 }
 
 }  // namespace bustub
