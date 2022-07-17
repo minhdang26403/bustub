@@ -77,7 +77,7 @@ void BasicTest1() {
     delete txns[i];
   }
 }
-TEST(LockManagerTest, DISABLED_BasicTest) { BasicTest1(); }
+TEST(LockManagerTest, BasicTest) { BasicTest1(); }
 
 void TwoPLTest() {
   LockManager lock_mgr{};
@@ -123,7 +123,7 @@ void TwoPLTest() {
 
   delete txn;
 }
-TEST(LockManagerTest, DISABLED_TwoPLTest) { TwoPLTest(); }
+TEST(LockManagerTest, TwoPLTest) { TwoPLTest(); }
 
 void UpgradeTest() {
   LockManager lock_mgr{};
@@ -150,7 +150,7 @@ void UpgradeTest() {
   txn_mgr.Commit(&txn);
   CheckCommitted(&txn);
 }
-TEST(LockManagerTest, DISABLED_UpgradeLockTest) { UpgradeTest(); }
+TEST(LockManagerTest, UpgradeLockTest) { UpgradeTest(); }
 
 void WoundWaitBasicTest() {
   LockManager lock_mgr{};
@@ -178,7 +178,8 @@ void WoundWaitBasicTest() {
     // wait for txn 0 to call lock_exclusive(), which should wound us
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-    CheckAborted(&txn_die);
+    // CheckAborted(&txn_die);
+    EXPECT_EQ(txn_die.GetState(), TransactionState::ABORTED);
 
     // unlock
     txn_mgr.Abort(&txn_die);
@@ -202,6 +203,66 @@ void WoundWaitBasicTest() {
   txn_mgr.Commit(&txn_hold);
   CheckCommitted(&txn_hold);
 }
-TEST(LockManagerTest, DISABLED_WoundWaitBasicTest) { WoundWaitBasicTest(); }
+TEST(LockManagerTest, WoundWaitBasicTest) { WoundWaitBasicTest(); }
+
+// Own test cases
+void WoundWaitUpgradeTest() {
+  LockManager lock_mgr{};
+  TransactionManager txn_mgr{&lock_mgr};
+  RID rid{0, 0};
+
+  int id_hold = 0;
+  int id_die = 1;
+
+  std::promise<void> t1done;
+  std::shared_future<void> t1_future(t1done.get_future());
+
+  Transaction txn_hold(id_hold);
+  txn_mgr.Begin(&txn_hold);
+
+  bool res = lock_mgr.LockShared(&txn_hold, rid);
+  EXPECT_TRUE(res);
+
+  auto wait_die_task = [&]() {
+    // younger transaction acquires lock first
+    Transaction txn_die(id_die);
+    txn_mgr.Begin(&txn_die);
+    bool res = lock_mgr.LockShared(&txn_die, rid);
+    EXPECT_TRUE(res);
+
+    CheckGrowing(&txn_die);
+    CheckTxnLockSize(&txn_die, 1, 0);
+
+    t1done.set_value();
+
+    // wait for txn 0 to call lock_exclusive(), which should wound us
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    // CheckAborted(&txn_die);
+    EXPECT_EQ(txn_die.GetState(), TransactionState::ABORTED);
+
+    // unlock
+    txn_mgr.Abort(&txn_die);
+  };
+
+  // Transaction txn_hold(id_hold);
+  // txn_mgr.Begin(&txn_hold);
+
+  // launch the waiter thread
+  std::thread wait_thread{wait_die_task};
+
+  // wait for txn1 to lock
+  t1_future.wait();
+
+  res = lock_mgr.LockUpgrade(&txn_hold, rid);
+  EXPECT_TRUE(res);
+
+  wait_thread.join();
+
+  CheckGrowing(&txn_hold);
+  txn_mgr.Commit(&txn_hold);
+  CheckCommitted(&txn_hold);
+}
+TEST(LockManagerTest, WoundWaitUpgradeTest) { WoundWaitUpgradeTest(); }
 
 }  // namespace bustub
