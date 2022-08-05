@@ -137,7 +137,7 @@ bool HASH_TABLE_TYPE::Insert(Transaction *transaction, const KeyType &key, const
   table_latch_.RUnlock();
 
   table_latch_.WLock();
-  // Bucket is full
+  // Bucket is not full
   bucket_page->RLatch();
   if (!bucket_page_data->IsFull()) {
     bucket_page->RUnlatch();
