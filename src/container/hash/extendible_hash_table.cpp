@@ -136,6 +136,8 @@ bool HASH_TABLE_TYPE::Insert(Transaction *transaction, const KeyType &key, const
   bucket_page->WUnlatch();
   table_latch_.RUnlock();
 
+  // Split insert: check the bucket_page_data again since some threads may insert (key,value)
+  // while we release the read lock
   table_latch_.WLock();
   // Bucket is not full
   bucket_page->RLatch();
